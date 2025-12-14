@@ -278,7 +278,7 @@ void Editor::loadProject(const std::string& filename) {
                 else notes.push_back(new LongNote(t, la, d));
             }
         }
-        if (timingPoints.empty(x)) timingPoints.push_back(TimingPoint(0, 120, 4, 4));
+        if (timingPoints.empty()) timingPoints.push_back(TimingPoint(0, 120, 4, 4));
         std::sort(timingPoints.begin(), timingPoints.end(), [](const TimingPoint& a, const TimingPoint& b) {return a.time < b.time; });
         musicTime = 0; isPlaying = false;
         std::cout << "Loaded." << std::endl;
