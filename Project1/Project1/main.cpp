@@ -1,7 +1,10 @@
 #include "GameEngine.h"
 
+// 프로그램 진입점
 int main() {
-    GameEngine engine; // 엔진 생성
-    engine.run();      // 엔진 가동
+    // 엔진 인스턴스 생성 및 실행
+    GameEngine engine;
+    engine.run();
+
     return 0;
 }

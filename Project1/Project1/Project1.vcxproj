@@ -135,17 +135,23 @@
     <None Include=".gitignore" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ChartManager.cpp" />
     <ClCompile Include="Editor.cpp" />
+    <ClCompile Include="GameConfig.cpp" />
     <ClCompile Include="GameEngine.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Note.cpp" />
+    <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="TimingPoint.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ChartManager.h" />
     <ClInclude Include="Command.h" />
     <ClInclude Include="Editor.h" />
+    <ClInclude Include="GameConfig.h" />
     <ClInclude Include="GameEngine.h" />
     <ClInclude Include="Note.h" />
+    <ClInclude Include="Renderer.h" />
     <ClInclude Include="TimingPoint.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
