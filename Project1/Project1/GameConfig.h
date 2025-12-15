@@ -1,7 +1,7 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 
-// [리팩토링] 모든 상수를 한 곳에서 관리하여 유지보수성 향상
+// 모든 상수를 한 곳에서 관리하여 유지보수성 향상
 namespace GameConfig {
     // 화면 설정
     constexpr int WINDOW_WIDTH = 1280;

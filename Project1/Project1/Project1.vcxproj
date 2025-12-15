@@ -137,7 +137,6 @@
   <ItemGroup>
     <ClCompile Include="ChartManager.cpp" />
     <ClCompile Include="Editor.cpp" />
-    <ClCompile Include="GameConfig.cpp" />
     <ClCompile Include="GameEngine.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Note.cpp" />
