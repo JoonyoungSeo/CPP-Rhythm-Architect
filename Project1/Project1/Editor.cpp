@@ -1,174 +1,286 @@
-#include "Editor.h"
+Ôªø#include "Editor.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
 
 Editor::Editor()
-    : isPlaying(false), musicTime(0.0), scrollSpeed(0.8f), isGameMode(false),
-    isMouseDown(false), currentLane(-1)
+    : snapDiv(4), scrollSpeed(0.5f), musicTime(0.0),
+    isPlaying(false), isMouseDown(false), currentLane(-1),
+    isGameMode(false), isMusicLoaded(false)
 {
+    // Í∏∞Î≥∏ ÌÉÄÏù¥Î∞ç Ìè¨Ïù∏Ìä∏
+    timingPoints.push_back(TimingPoint(0.0, 120.0, 4, 4));
+
     if (bgm.openFromFile("music.ogg")) {
-        std::cout << "[Editor] Music loaded successfully." << std::endl;
+        isMusicLoaded = true;
+        std::cout << "Music Loaded!" << std::endl;
     }
     else {
-        std::cerr << "[Editor] Failed to load music.ogg" << std::endl;
+        std::cout << "Music not found (music.ogg). Using internal clock." << std::endl;
     }
 }
 
 Editor::~Editor() {
-    // std::unique_ptr¿ª ªÁøÎ«œπ«∑Œ ∫∞µµ¿« ∏ﬁ∏∏Æ «ÿ¡¶ ∑Œ¡˜ ∫“« ø‰
+    clearStack(undoStack);
+    clearStack(redoStack);
+    for (Note* note : notes) delete note;
 }
 
-void Editor::processCommand(Command* cmd) {
-    if (!cmd) return;
-    cmd->execute();
-    undoStack.push(std::unique_ptr<Command>(cmd));
-
-    // ªı∑ŒøÓ ∏Ì∑…¿Ã Ω««‡µ«∏È Redo Ω∫≈√¿∫ ∫Òøˆæﬂ «‘
-    while (!redoStack.empty()) redoStack.pop();
+TimingPoint Editor::getCurrentTimingPoint(double time) {
+    TimingPoint target = timingPoints[0];
+    for (const auto& tp : timingPoints) {
+        if (time >= tp.time) target = tp;
+        else break;
+    }
+    return target;
 }
 
+double Editor::quantize(double rawTime) {
+    TimingPoint tp = getCurrentTimingPoint(rawTime);
+    double beatDuration = 60000.0 / tp.bpm;
+    double snapInterval = beatDuration * (4.0 / snapDiv);
+    double relativeTime = rawTime - tp.time;
+    return tp.time + std::round(relativeTime / snapInterval) * snapInterval;
+}
+
+void Editor::clearStack(std::stack<Command*>& s) {
+    while (!s.empty()) { delete s.top(); s.pop(); }
+}
+
+// ÏóÖÎç∞Ïù¥Ìä∏
 void Editor::update(sf::Time dt) {
     if (isPlaying) {
-        if (bgm.getStatus() == sf::Music::Playing) {
-            // [Audio Driven Sync] ø¿µø¿ ø£¡¯¿« Ω√∞£¿ª ±‚¡ÿ¿∏∑Œ µø±‚»≠
+        if (isMusicLoaded && bgm.getStatus() == sf::Music::Playing) {
             musicTime = bgm.getPlayingOffset().asMilliseconds();
         }
         else {
-            // ¿Ωæ«¿Ã æ¯¿ª ∞ÊøÏ∏¶ ¥Î∫Ò«— ∆˙πÈ
-            musicTime += dt.asMilliseconds();
+            musicTime += dt.asSeconds() * 1000.0;
         }
     }
 }
 
+// ÏûÖÎ†• Ï≤òÎ¶¨
 void Editor::handleInput(sf::RenderWindow& window, sf::Event& event) {
-    // 1. ∏µÂ ¿¸»Ø π◊ ¿Áª˝ ¡¶æÓ
+    // 1. Í≥µÌÜµ ÌÇ§
     if (event.type == sf::Event::KeyPressed) {
+        if (event.key.code == sf::Keyboard::Space) {
+            isPlaying = !isPlaying;
+            if (isMusicLoaded) {
+                if (isPlaying) {
+                    bgm.setPlayingOffset(sf::Time(sf::milliseconds(musicTime)));
+                    bgm.play();
+                }
+                else bgm.pause();
+            }
+        }
         if (event.key.code == sf::Keyboard::Enter) {
             isGameMode = !isGameMode;
             isPlaying = false;
-            if (bgm.getStatus() == sf::Music::Playing) bgm.pause();
-            std::cout << "Mode switched: " << (isGameMode ? "GAME" : "EDITOR") << std::endl;
-        }
-        if (event.key.code == sf::Keyboard::Space) {
-            isPlaying = !isPlaying;
-            if (isPlaying) {
-                bgm.setPlayingOffset(sf::Time(sf::milliseconds(musicTime)));
-                bgm.play();
-            }
-            else {
-                bgm.pause();
-            }
+            if (isMusicLoaded) bgm.pause();
+            std::cout << "Mode: " << (isGameMode ? "GAME" : "EDITOR") << std::endl;
         }
     }
 
-    // ∞‘¿” ∏µÂ¿œ ∂ß¥¬ ∆Ì¡˝ ¿‘∑¬ π´Ω√
-    if (isGameMode) return;
+    // 2. Í≤åÏûÑ Î™®Îìú
+    if (isGameMode) {
+        if (event.type == sf::Event::KeyPressed) {
+            int lane = -1;
+            if (event.key.code == sf::Keyboard::D) lane = 0;
+            if (event.key.code == sf::Keyboard::F) lane = 1;
+            if (event.key.code == sf::Keyboard::J) lane = 2;
+            if (event.key.code == sf::Keyboard::K) lane = 3;
 
-    // 2. ø°µ≈Õ ¿¸øÎ ¿‘∑¬ (Undo/Redo, Save/Load)
-    if (event.type == sf::Event::KeyPressed) {
-        if (event.key.control) {
-            // Undo (Ctrl + Z)
-            if (event.key.code == sf::Keyboard::Z) {
-                if (!event.key.shift && !undoStack.empty()) {
-                    auto cmd = std::move(undoStack.top());
-                    undoStack.pop();
-                    cmd->undo();
-                    redoStack.push(std::move(cmd));
-                    std::cout << "Undo." << std::endl;
+            if (lane != -1) {
+                for (auto n : notes) {
+                    if (n->getLane() == lane && std::abs(n->getTimestamp() - musicTime) < 100.0) {
+                        std::cout << "HIT! Lane " << lane << std::endl;
+                        break;
+                    }
                 }
-                // Redo (Ctrl + Shift + Z)
-                else if (event.key.shift && !redoStack.empty()) {
-                    auto cmd = std::move(redoStack.top());
-                    redoStack.pop();
-                    cmd->execute();
-                    undoStack.push(std::move(cmd));
-                    std::cout << "Redo." << std::endl;
-                }
-            }
-            // Save (Ctrl + S)
-            if (event.key.code == sf::Keyboard::S) {
-                chartManager.saveToFile("chart.rna");
-            }
-            // Load (Ctrl + O)
-            if (event.key.code == sf::Keyboard::O) {
-                chartManager.loadFromFile("chart.rna");
-                while (!undoStack.empty()) undoStack.pop();
-                while (!redoStack.empty()) redoStack.pop();
             }
         }
+        return;
+    }
 
-        // ∏∂øÏΩ∫ »Ÿ∑Œ ≈∏¿”∂Û¿Œ ¿Ãµø
-        if (!isPlaying) {
-            // SFML ¿Ã∫•∆Æ ∑Á«¡ π€ø°º≠ √≥∏Æ«œ∞≈≥™ ø©±‚º≠ √≥∏Æ
-            // »Ÿ ¿Ã∫•∆Æ¥¬ ∫∞µµ ∫–±‚ « ø‰
+    // 3. ÏóêÎîîÌÑ∞ Î™®Îìú
+    if (event.type == sf::Event::KeyPressed) {
+        if (event.key.code == sf::Keyboard::Num1) snapDiv = 4;
+        if (event.key.code == sf::Keyboard::Num2) snapDiv = 8;
+        if (event.key.code == sf::Keyboard::Num3) snapDiv = 12;
+        if (event.key.code == sf::Keyboard::Num4) snapDiv = 16;
+
+        // [T] Î≥ÄÏÜç Ï∂îÍ∞Ä (ÏΩòÏÜî ÏûÖÎ†•)
+        if (event.key.code == sf::Keyboard::T && !isPlaying) {
+            double b; int u, l;
+            std::cout << "Add Timing Point at " << musicTime << "ms" << std::endl;
+            std::cout << "BPM? "; std::cin >> b;
+            std::cout << "Upper? "; std::cin >> u;
+            std::cout << "Lower? "; std::cin >> l;
+            timingPoints.push_back(TimingPoint(musicTime, b, u, l));
+            std::sort(timingPoints.begin(), timingPoints.end(),
+                [](const TimingPoint& a, const TimingPoint& b) { return a.time < b.time; });
+        }
+
+        if (event.key.control) {
+            if (event.key.code == sf::Keyboard::S) saveProject("song_data.rna");
+            if (event.key.code == sf::Keyboard::O) loadProject("song_data.rna");
+            if (event.key.code == sf::Keyboard::Z) {
+                if (!event.key.shift && !undoStack.empty()) {
+                    Command* c = undoStack.top(); undoStack.pop(); c->undo(); redoStack.push(c);
+                }
+                else if (event.key.shift && !redoStack.empty()) {
+                    Command* c = redoStack.top(); redoStack.pop(); c->execute(); undoStack.push(c);
+                }
+            }
         }
     }
 
     if (event.type == sf::Event::MouseWheelScrolled && !isPlaying) {
         musicTime += event.mouseWheelScroll.delta * 200.0;
         if (musicTime < 0) musicTime = 0;
-        if (bgm.getStatus() != sf::Music::Playing)
-            bgm.setPlayingOffset(sf::Time(sf::milliseconds(musicTime)));
+        if (isMusicLoaded) bgm.setPlayingOffset(sf::Time(sf::milliseconds(musicTime)));
     }
 
-    // 3. ≥Î∆Æ πËƒ° (∏∂øÏΩ∫ ¿‘∑¬)
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
         sf::Vector2i mPos = sf::Mouse::getPosition(window);
-        // ∆«¡§º± ¿ß¬  øµø™¿Œ¡ˆ »Æ¿Œ
-        if (mPos.y < GameConfig::JUDGMENT_LINE_Y) {
+        if (mPos.y < JUDGMENT_LINE_Y) {
             isMouseDown = true;
             startMousePos = mPos;
-            currentLane = (int)((mPos.x - GameConfig::START_X) / GameConfig::LANE_WIDTH);
+            currentLane = (int)((mPos.x - START_X) / LANE_WIDTH);
         }
     }
 
     if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left && isMouseDown) {
         isMouseDown = false;
         sf::Vector2i endPos = sf::Mouse::getPosition(window);
-
-        // ¿Ø»ø«— ∑π¿Œ¿Œ¡ˆ »Æ¿Œ
         if (currentLane >= 0 && currentLane <= 3) {
-            // Y¡¬«•∏¶ Ω√∞£¿∏∑Œ ø™ªÍ
-            double startY = startMousePos.y;
-            double timeOffset = (GameConfig::JUDGMENT_LINE_Y - startY) / scrollSpeed;
-            double rawTime = musicTime + timeOffset;
-            double snappedTime = chartManager.quantize(rawTime);
+            double startOffset = (JUDGMENT_LINE_Y - startMousePos.y) / scrollSpeed;
+            double startTime = quantize(musicTime + startOffset);
 
-            float dragDist = (float)(startMousePos.y - endPos.y);
+            float dist = (float)(startMousePos.y - endPos.y);
+            Command* cmd = nullptr;
 
-            // µÂ∑°±◊ ∞≈∏Æ∞° ±Ê∏È ∑’≥Î∆Æ, ¬™¿∏∏È ¥‹≈∏/ªË¡¶
-            if (dragDist > 20.0f) {
-                // ∑’≥Î∆Æ ª˝º∫
-                double endY = endPos.y;
-                double endTimeOffset = (GameConfig::JUDGMENT_LINE_Y - endY) / scrollSpeed;
-                double snappedEndTime = chartManager.quantize(musicTime + endTimeOffset);
-                double duration = snappedEndTime - snappedTime;
-
-                if (duration > 0) {
-                    processCommand(new PlaceNoteCommand(chartManager, 1, snappedTime, currentLane, duration));
-                }
+            if (dist > 10.0f) {
+                double endOffset = (JUDGMENT_LINE_Y - endPos.y) / scrollSpeed;
+                double endTime = quantize(musicTime + endOffset);
+                if (endTime - startTime > 0) cmd = new PlaceNoteCommand(notes, new LongNote(startTime, currentLane, endTime - startTime));
             }
             else {
-                // «ÿ¥Á ¿ßƒ°ø° ≥Î∆Æ∞° ¿÷¿∏∏È ªË¡¶, æ¯¿∏∏È ¥‹≈∏ ª˝º∫
-                Note* existing = chartManager.findNoteAt(snappedTime, currentLane);
-                if (existing) {
-                    // ªË¡¶ ƒø∏«µÂ (LongNote ±Ê¿Ã∏¶ æÀ±‚ ¿ß«ÿº± Noteø° ∞°ªÛ«‘ºˆ getDuration « ø‰. ø©±‚º± 0¿∏∑Œ ∞°¡§)
-                    processCommand(new DeleteNoteCommand(chartManager, 0, existing->getTimestamp(), existing->getLane(), 0));
+                Note* target = nullptr;
+                for (auto n : notes) {
+                    if (n->getLane() == currentLane && std::abs(n->getTimestamp() - startTime) < 1.0) {
+                        target = n; break;
+                    }
                 }
-                else {
-                    // ¥‹≈∏ ª˝º∫
-                    processCommand(new PlaceNoteCommand(chartManager, 0, snappedTime, currentLane));
-                }
+                if (target) cmd = new DeleteNoteCommand(notes, target);
+                else cmd = new PlaceNoteCommand(notes, new TapNote(startTime, currentLane));
             }
+
+            if (cmd) { cmd->execute(); undoStack.push(cmd); clearStack(redoStack); }
         }
     }
 }
 
+// Í∑∏Î¶¨Í∏∞
 void Editor::draw(sf::RenderWindow& window) {
-    // Rendererø°∞‘ ±◊∏Æ±‚ ¿ß¿”
-    renderer.drawGameScreen(window, chartManager, musicTime, scrollSpeed);
+    // 1. Î†àÏù∏
+    for (int i = 0; i <= 4; i++) {
+        sf::RectangleShape l(sf::Vector2f(2.0f, 720.0f));
+        l.setFillColor(sf::Color(50, 50, 50));
+        l.setPosition(START_X + (i * LANE_WIDTH), 0);
+        window.draw(l);
+    }
 
-    // UI ¡§∫∏ «•Ω√
-    std::string info = "Time: " + std::to_string((int)musicTime) + "ms\n";
-    info += "Mode: " + std::string(isGameMode ? "GAME" : "EDITOR") + "\n";
-    info += "Snap: 1/" + std::to_string(chartManager.getSnapDiv());
-    renderer.drawUI(window, info);
+    // 2. ÎπÑÌä∏ Í∑∏Î¶¨Îìú
+    double screenDuration = 720.0 / scrollSpeed;
+    TimingPoint tp = getCurrentTimingPoint(musicTime);
+    double beatDur = 60000.0 / tp.bpm;
+    double interval = beatDur * (4.0 / snapDiv);
+    double t = tp.time + std::ceil((musicTime - tp.time) / interval) * interval;
+
+    while (t < musicTime + screenDuration) {
+        float y = JUDGMENT_LINE_Y - (float)(t - musicTime) * scrollSpeed;
+        sf::RectangleShape l(sf::Vector2f(4 * LANE_WIDTH, 1.0f));
+        bool isMain = std::abs(fmod(t - tp.time, beatDur)) < 0.01;
+        l.setFillColor(isMain ? sf::Color(150, 150, 150) : sf::Color(60, 60, 60));
+        l.setPosition(START_X, y);
+        window.draw(l);
+        t += interval;
+    }
+
+    // 3. ÌÉÄÏù¥Î∞ç Ìè¨Ïù∏Ìä∏ ÏÑ†
+    for (const auto& p : timingPoints) {
+        if (p.time >= musicTime && p.time <= musicTime + screenDuration) {
+            float y = JUDGMENT_LINE_Y - (float)(p.time - musicTime) * scrollSpeed;
+            sf::RectangleShape l(sf::Vector2f(1280.0f, 2.0f));
+            l.setFillColor(sf::Color::Green);
+            l.setPosition(0, y);
+            window.draw(l);
+        }
+    }
+
+    // 4. ÌåêÏ†ïÏÑ† Î∞è ÎÖ∏Ìä∏
+    sf::RectangleShape jl(sf::Vector2f(1280.0f, 5.0f));
+    jl.setFillColor(sf::Color::Red);
+    jl.setPosition(0, JUDGMENT_LINE_Y);
+    window.draw(jl);
+
+    for (Note* n : notes) n->draw(window, musicTime, scrollSpeed);
+
+    // 5. ÎìúÎûòÍ∑∏ ÎØ∏Î¶¨Î≥¥Í∏∞
+    if (!isGameMode && isMouseDown && currentLane >= 0 && currentLane <= 3) {
+        float h = std::max((float)(startMousePos.y - sf::Mouse::getPosition(window).y), 20.0f);
+        sf::RectangleShape p(sf::Vector2f(100.0f, h));
+        p.setFillColor(sf::Color(0, 255, 0, 128));
+        p.setPosition(START_X + (currentLane * LANE_WIDTH), (float)startMousePos.y - h);
+        window.draw(p);
+    }
+
+    // 6. UI
+    sf::RectangleShape b(sf::Vector2f(1280, 720));
+    b.setFillColor(sf::Color::Transparent);
+    b.setOutlineThickness(-8.0f);
+    if (isGameMode) { b.setOutlineColor(sf::Color::Cyan); window.draw(b); }
+    else if (!isPlaying) { b.setOutlineColor(sf::Color::Yellow); window.draw(b); }
+}
+
+void Editor::saveProject(const std::string& filename) {
+    std::ofstream out(filename);
+    if (out.is_open()) {
+        out << "[TIMING]" << std::endl;
+        for (const auto& tp : timingPoints) out << tp.serialize() << std::endl;
+        out << "[NOTES]" << std::endl;
+        for (const auto& n : notes) out << n->serialize() << std::endl;
+        std::cout << "Saved." << std::endl;
+    }
+}
+
+void Editor::loadProject(const std::string& filename) {
+    std::ifstream in(filename);
+    if (in.is_open()) {
+        clearStack(undoStack); clearStack(redoStack);
+        for (auto n : notes) delete n; notes.clear(); timingPoints.clear();
+        std::string line; int sec = 0;
+        while (std::getline(in, line)) {
+            if (line == "[TIMING]") { sec = 1; continue; }
+            if (line == "[NOTES]") { sec = 2; continue; }
+            if (line.empty()) continue;
+            std::stringstream ss(line);
+            if (sec == 1) {
+                double t, b; int u, l; ss >> t >> b >> u >> l;
+                timingPoints.push_back(TimingPoint(t, b, u, l));
+            }
+            else if (sec == 2) {
+                int ty, la; double t, d; ss >> ty >> t >> la >> d;
+                if (ty == 0) notes.push_back(new TapNote(t, la));
+                else notes.push_back(new LongNote(t, la, d));
+            }
+        }
+        if (timingPoints.empty()) timingPoints.push_back(TimingPoint(0, 120, 4, 4));
+        std::sort(timingPoints.begin(), timingPoints.end(), [](const TimingPoint& a, const TimingPoint& b) {return a.time < b.time; });
+        musicTime = 0; isPlaying = false;
+        std::cout << "Loaded." << std::endl;
+    }
 }

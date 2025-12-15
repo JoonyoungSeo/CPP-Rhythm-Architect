@@ -1,43 +1,53 @@
-#pragma once
+ï»¿#pragma once
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
+#include <vector>
 #include <stack>
-#include <iostream>
-#include "ChartManager.h"
-#include "Renderer.h"
+#include <string>
+#include "Note.h"
 #include "Command.h"
-#include "GameConfig.h"
+#include "TimingPoint.h"
 
 class Editor {
 private:
-    // [ÇÙ½É ¸ğµâ]
-    ChartManager chartManager;
-    Renderer renderer;
+    // ë°ì´í„°
+    std::vector<Note*> notes;
+    std::vector<TimingPoint> timingPoints;
+    std::stack<Command*> undoStack;
+    std::stack<Command*> redoStack;
 
-    // [Undo/Redo ½ºÅÃ]
-    std::stack<std::unique_ptr<Command>> undoStack;
-    std::stack<std::unique_ptr<Command>> redoStack;
-
-    // [»óÅÂ º¯¼ö]
+    // ìƒíƒœ ë³€ìˆ˜
     sf::Music bgm;
+    bool isMusicLoaded;
+    double musicTime;
     bool isPlaying;
-    double musicTime;      // ÇöÀç Àç»ı ½Ã°£ (ms)
-    float scrollSpeed;     // ½ºÅ©·Ñ ¼Óµµ
-    bool isGameMode;       // °ÔÀÓ/¿¡µğÅÍ ¸ğµå ÀüÈ¯
+    float scrollSpeed;
+    int snapDiv;
+    bool isGameMode;
 
-    // [ÀÔ·Â »óÅÂ]
+    // ë§ˆìš°ìŠ¤ ì…ë ¥
     bool isMouseDown;
     sf::Vector2i startMousePos;
     int currentLane;
 
-    void processCommand(Command* cmd);
-    void clearStacks();
+    // ìƒìˆ˜
+    const float JUDGMENT_LINE_Y = 600.0f;
+    const float START_X = 400.0f;
+    const float LANE_WIDTH = 120.0f;
+
+    // í—¬í¼
+    double quantize(double rawTime);
+    void clearStack(std::stack<Command*>& s);
+    TimingPoint getCurrentTimingPoint(double time);
 
 public:
     Editor();
-    ~Editor(); // ½ºÅÃ Á¤¸® ÇÊ¿ä¾øÀ½ (unique_ptr)
+    ~Editor();
 
     void handleInput(sf::RenderWindow& window, sf::Event& event);
     void update(sf::Time dt);
     void draw(sf::RenderWindow& window);
+
+    void saveProject(const std::string& filename);
+    void loadProject(const std::string& filename);
 };

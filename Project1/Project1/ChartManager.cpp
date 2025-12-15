@@ -1,26 +1,23 @@
-#include "ChartManager.h"
+ï»¿#include "ChartManager.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 
 ChartManager::ChartManager() : snapDiv(4) {
-    // ±âº» Å¸ÀÌ¹Ö Æ÷ÀÎÆ® Ãß°¡ (120 BPM, 4/4¹ÚÀÚ)
+    // ê¸°ë³¸ íƒ€ì´ë° í¬ì¸íŠ¸ ì¶”ê°€ (120 BPM, 4/4ë°•ì)
     timingPoints.push_back(TimingPoint(0.0, 120.0, 4, 4));
 }
 
 void ChartManager::addNote(std::unique_ptr<Note> note) {
-    // ÀÌ¹Ì °°Àº À§Ä¡¿¡ ³ëÆ®°¡ ÀÖ´ÂÁö È®ÀÎ ÈÄ Ãß°¡ (Áßº¹ ¹æÁö)
     if (findNoteAt(note->getTimestamp(), note->getLane()) == nullptr) {
-        notes.push_back(std::move(note)); // ¼ÒÀ¯±Ç ÀÌµ¿
+        notes.push_back(std::move(note));
     }
 }
 
 void ChartManager::removeNoteAt(double time, int lane) {
-    // remove_if¿Í ¶÷´Ù¸¦ »ç¿ëÇÑ ¸ğ´ø C++ ½ºÅ¸ÀÏ »èÁ¦
     notes.erase(
         std::remove_if(notes.begin(), notes.end(),
             [time, lane](const std::unique_ptr<Note>& n) {
-                // ¿ÀÂ÷ ¹üÀ§ 1ms ÀÌ³»¸é °°Àº ³ëÆ®·Î °£ÁÖ
                 return n->getLane() == lane && std::abs(n->getTimestamp() - time) < 1.0;
             }),
         notes.end());
@@ -29,29 +26,71 @@ void ChartManager::removeNoteAt(double time, int lane) {
 Note* ChartManager::findNoteAt(double time, int lane) {
     for (const auto& n : notes) {
         if (n->getLane() == lane && std::abs(n->getTimestamp() - time) < 1.0) {
-            return n.get(); // Raw Pointer ¹İÈ¯ (»ç¿ë¸¸ ÇÏ°í ¼ÒÀ¯´Â ÇÏÁö ¾ÊÀ½)
+            return n.get();
         }
     }
     return nullptr;
 }
 
 TimingPoint ChartManager::getCurrentTimingPoint(double time) const {
-    // ÇöÀç ½Ã°£º¸´Ù ÀÌÀü¿¡ ÀÖ´Â Å¸ÀÌ¹Ö Æ÷ÀÎÆ® Áß °¡Àå ´ÊÀº °Í Ã£±â
     TimingPoint target = timingPoints[0];
     for (const auto& tp : timingPoints) {
         if (time >= tp.time) target = tp;
-        else break; // ½Ã°£¼ø Á¤·ÄµÇ¾î ÀÖ´Ù°í °¡Á¤
+        else break;
     }
     return target;
 }
 
+// â­ [NEW] í˜„ì¬ ìœ„ì¹˜ì˜ BPM ì—…ë°ì´íŠ¸
+void ChartManager::updateCurrentBPM(double time, double newBPM) {
+    // í˜„ì¬ ì‹œê°„ì— í•´ë‹¹í•˜ëŠ” íƒ€ì´ë° í¬ì¸íŠ¸ ì°¾ê¸°
+    for (auto& tp : timingPoints) {
+        if (time >= tp.time) {
+            // ë‹¤ìŒ íƒ€ì´ë° í¬ì¸íŠ¸ê°€ ìˆê³ , í˜„ì¬ ì‹œê°„ì´ ê·¸ ì´ì „ì´ë©´
+            // ì´ íƒ€ì´ë° í¬ì¸íŠ¸ê°€ í˜„ì¬ ì‹œê°„ì— í•´ë‹¹
+            auto it = std::find_if(timingPoints.begin(), timingPoints.end(),
+                [&tp](const TimingPoint& other) { return other.time > tp.time; });
+
+            if (it == timingPoints.end() || time < it->time) {
+                tp.bpm = newBPM;
+                return;
+            }
+        }
+    }
+
+    // ì²« ë²ˆì§¸ íƒ€ì´ë° í¬ì¸íŠ¸ì˜ BPM ë³€ê²½ (fallback)
+    if (!timingPoints.empty()) {
+        timingPoints[0].bpm = newBPM;
+    }
+}
+
+// â­ [NEW] ìƒˆë¡œìš´ íƒ€ì´ë° í¬ì¸íŠ¸ ì¶”ê°€
+void ChartManager::addTimingPoint(double time, double bpm, int upper, int lower) {
+    // ê°™ì€ ì‹œê°„ì— ì´ë¯¸ íƒ€ì´ë° í¬ì¸íŠ¸ê°€ ìˆëŠ”ì§€ í™•ì¸
+    for (auto& tp : timingPoints) {
+        if (std::abs(tp.time - time) < 1.0) {
+            // ê¸°ì¡´ íƒ€ì´ë° í¬ì¸íŠ¸ ì—…ë°ì´íŠ¸
+            tp.bpm = bpm;
+            tp.signatureUpper = upper;
+            tp.signatureLower = lower;
+            return;
+        }
+    }
+
+    // ìƒˆ íƒ€ì´ë° í¬ì¸íŠ¸ ì¶”ê°€
+    timingPoints.push_back(TimingPoint(time, bpm, upper, lower));
+
+    // ì‹œê°„ìˆœ ì •ë ¬
+    std::sort(timingPoints.begin(), timingPoints.end(),
+        [](const TimingPoint& a, const TimingPoint& b) { return a.time < b.time; });
+}
+
 double ChartManager::quantize(double rawTime) {
     TimingPoint tp = getCurrentTimingPoint(rawTime);
-    double beatDuration = 60000.0 / tp.bpm; // 1¹ÚÀÚ ±æÀÌ (ms)
-    double snapInterval = beatDuration * (4.0 / snapDiv); // ½º³À °£°İ
+    double beatDuration = 60000.0 / tp.bpm;
+    double snapInterval = beatDuration * (4.0 / snapDiv);
 
     double relativeTime = rawTime - tp.time;
-    // ¹İ¿Ã¸²À» ÅëÇÑ ÀÚ¼® È¿°ú
     double snappedTime = std::round(relativeTime / snapInterval) * snapInterval;
 
     return tp.time + snappedTime;
@@ -77,10 +116,10 @@ void ChartManager::loadFromFile(const std::string& filename) {
     std::ifstream in(filename);
     if (!in.is_open()) return;
 
-    clear(); // ±âÁ¸ µ¥ÀÌÅÍ ÃÊ±âÈ­
+    clear();
 
     std::string line;
-    int section = 0; // 0: None, 1: Timing, 2: Notes
+    int section = 0;
 
     while (std::getline(in, line)) {
         if (line == "[TIMING]") { section = 1; continue; }
@@ -107,7 +146,6 @@ void ChartManager::loadFromFile(const std::string& filename) {
         }
     }
 
-    // Å¸ÀÌ¹Ö Æ÷ÀÎÆ® ½Ã°£¼ø Á¤·Ä
     std::sort(timingPoints.begin(), timingPoints.end(),
         [](const TimingPoint& a, const TimingPoint& b) { return a.time < b.time; });
 
@@ -117,6 +155,6 @@ void ChartManager::loadFromFile(const std::string& filename) {
 }
 
 void ChartManager::clear() {
-    notes.clear(); // ½º¸¶Æ® Æ÷ÀÎÅÍµéÀÌ ÀÚµ¿À¸·Î ¸Ş¸ğ¸® ÇØÁ¦
+    notes.clear();
     timingPoints.clear();
 }

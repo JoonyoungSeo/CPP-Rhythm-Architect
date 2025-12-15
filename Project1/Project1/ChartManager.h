@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <vector>
 #include <memory>
 #include <algorithm>
@@ -6,35 +6,38 @@
 #include "Note.h"
 #include "TimingPoint.h"
 
-// [¸®ÆÑÅä¸µ] µ¥ÀÌÅÍ °ü¸® Ã¥ÀÓ ºĞ¸® (SRP ÁØ¼ö)
-// Editor Å¬·¡½º¿¡¼­ ³ëÆ® °ü¸®¿Í ½Ã°£ °è»ê ·ÎÁ÷À» ¶¼¾î³¿
 class ChartManager {
 private:
-    // Raw pointer ´ë½Å unique_ptr »ç¿ëÀ¸·Î ¸Ş¸ğ¸® ¾ÈÀü¼º È®º¸
     std::vector<std::unique_ptr<Note>> notes;
     std::vector<TimingPoint> timingPoints;
-    int snapDiv; // 4, 8, 12, 16 ¹ÚÀÚ ºĞÇÒ
+    int snapDiv;
 
 public:
     ChartManager();
-    ~ChartManager() = default; // unique_ptr ´öºĞ¿¡ º°µµ ÇØÁ¦ ÄÚµå ºÒÇÊ¿ä
+    ~ChartManager() = default;
 
-    // ³ëÆ® Á¶ÀÛ (¼ÒÀ¯±Ç ÀÌµ¿À» °í·ÁÇÑ ÀÎÅÍÆäÀÌ½º)
+    // ë…¸íŠ¸ ì¡°ì‘
     void addNote(std::unique_ptr<Note> note);
     void removeNoteAt(double time, int lane);
-    Note* findNoteAt(double time, int lane); // Á¶È¸¿ë Raw Pointer ¹İÈ¯ (¼ÒÀ¯±ÇX)
+    Note* findNoteAt(double time, int lane);
 
-    // ½Ã°£ ¹× ÄöÅ¸ÀÌÁî °ü·Ã
+    // ì‹œê°„ ë° í€€íƒ€ì´ì¦ˆ ê´€ë ¨
     TimingPoint getCurrentTimingPoint(double time) const;
     double quantize(double rawTime);
     void setSnapDiv(int div) { snapDiv = div; }
     int getSnapDiv() const { return snapDiv; }
 
-    // µ¥ÀÌÅÍ Á¢±Ù (ReadOnly)
+    // BPM ì—…ë°ì´íŠ¸
+    void updateCurrentBPM(double time, double newBPM);
+
+    // ìƒˆ íƒ€ì´ë° í¬ì¸íŠ¸ ì¶”ê°€
+    void addTimingPoint(double time, double bpm, int upper = 4, int lower = 4);
+
+    // ë°ì´í„° ì ‘ê·¼ (ReadOnly)
     const std::vector<std::unique_ptr<Note>>& getNotes() const { return notes; }
     const std::vector<TimingPoint>& getTimingPoints() const { return timingPoints; }
 
-    // ÆÄÀÏ ÀÔÃâ·Â
+    // íŒŒì¼ ì…ì¶œë ¥
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
     void clear();
